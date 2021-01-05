@@ -401,3 +401,5 @@
 -define(hip17_res_12, hip17_res_12).
 -define(density_tgt_res, density_tgt_res).
 -define(hip17_interactivity_blocks, hip17_interactivity_blocks).
+
+-define(assert_loc_txn_version, assert_loc_txn_version).
