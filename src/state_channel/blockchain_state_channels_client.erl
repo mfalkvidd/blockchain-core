@@ -155,7 +155,6 @@ handle_cast({banner, Banner, HandlerPid}, State) ->
             end
     end;
 handle_cast({packet, Packet, DefaultRouters, Region}, #state{chain=Chain}=State) ->
-    lager:warning("*** client sending packet ~p", [Packet]),
     NewState = case find_routing(Packet, Chain) of
                    {error, _Reason} ->
                      lager:notice("failed to find router for join packet with routing information ~p:~p, trying default routers",

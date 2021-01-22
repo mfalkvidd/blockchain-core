@@ -97,11 +97,3 @@ is_chain_ready(undefined) ->
     false;
 is_chain_ready(_Chain) ->
     true.
-
-%% hack to get ip from peer addr
-%% TODO: work out the proper way to do this
-%%p2p_addr_to_host(Peer)->
-%%    SwarmTID = blockchain_swarm:tid(),
-%%    [H | _ ] = libp2p_transport:sort_addrs(SwarmTID, libp2p_peer:listen_addrs(Peer)),
-%%    [_, _, IP,_, _] = re:split(H, "/"),
-%%    binary_to_list(IP).
