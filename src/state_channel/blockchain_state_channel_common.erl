@@ -3,6 +3,7 @@
 -author("andrewmckenzie").
 
 -export([
+    new_handler_state/0,
     new_handler_state/7,
     ledger/1, ledger/2,
     pending_packet_offers/1, pending_packet_offers/2,
@@ -31,7 +32,7 @@
           ledger :: undefined | blockchain_ledger_v1:ledger(),
           pending_packet_offers = #{} :: #{binary() => {blockchain_state_channel_packet_offer_v1:offer(), pos_integer()}},
           offer_queue = [] :: [{blockchain_state_channel_packet_offer_v1:offer(), pos_integer()}],
-          handler_mod :: atom(),
+          handler_mod = undefined :: atom(),
           pending_offer_limit = undefined :: undefined | pos_integer(),
           encode_pb = true :: boolean
          }).
@@ -40,6 +41,8 @@
 -type handler_state() :: #handler_state{}.
 -export_type([handler_state/0]).
 
+new_handler_state()->
+    #handler_state{}.
 new_handler_state(Chain, Ledger, PendingPacketOffers, OfferQueue, HandlerMod, PendingOfferLimit, EncodePB)->
     #handler_state{
         chain = Chain,

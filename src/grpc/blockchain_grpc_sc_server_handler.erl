@@ -20,8 +20,12 @@
 %% ------------------------------------------------------------------
 
 -export([
+    close/1
 ]).
 
+close(_HandlerPid)->
+    %% TODO - implement close in grpc stream
+    ok.
 
 -spec init( grpcbox_stream:t()) ->  grpcbox_stream:t().
 init(StreamState)->

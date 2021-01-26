@@ -132,7 +132,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% gen_server message handling
 %% ------------------------------------------------------------------
 
-handle_cast({banner, Banner, HandlerPid}, State) ->
+handle_cast({banner, Banner, HandlerPid}, #state{sc_client_transport_handler = Handler} = State) ->
     case blockchain_state_channel_banner_v1:sc(Banner) of
         undefined ->
             %% TODO in theory if you're in the same OUI as the router this is ok
@@ -141,12 +141,12 @@ handle_cast({banner, Banner, HandlerPid}, State) ->
             case is_valid_sc(BannerSC, State) of
                 {error, causal_conflict} ->
                     lager:error("causal_conflict for banner sc_id: ~p", [blockchain_state_channel_v1:id(BannerSC)]),
-                    _ = libp2p_framed_stream:close(HandlerPid),
+                    _ = Handler:close(HandlerPid),
                     ok = append_state_channel(BannerSC, State),
                     {noreply, State};
                 {error, Reason} ->
                     lager:error("reason: ~p", [Reason]),
-                    _ = libp2p_framed_stream:close(HandlerPid),
+                    _ = Handler:close(HandlerPid),
                     {noreply, State};
                 ok ->
                     overwrite_state_channel(BannerSC, State),
