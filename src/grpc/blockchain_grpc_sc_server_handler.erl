@@ -2,7 +2,6 @@
 
 -behavior(helium_state_channel_bhvr).
 
--include("autogen/client/state_channel_client_pb.hrl").
 -include("autogen/server/state_channel_pb.hrl").
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 
