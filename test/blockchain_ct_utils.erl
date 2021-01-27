@@ -174,6 +174,8 @@ init_per_suite(Config) ->
 init_per_testcase(TestCase, Config) ->
     BaseDir = ?config(base_dir, Config),
     LogDir = ?config(log_dir, Config),
+    SCClientTransportHandler = ?config(sc_client_transport_handler, Config),
+
     os:cmd(os:find_executable("epmd")++" -daemon"),
     {ok, Hostname} = inet:gethostname(),
     case net_kernel:start([list_to_atom("runner-blockchain-" ++
@@ -221,8 +223,7 @@ init_per_testcase(TestCase, Config) ->
                                 ct_rpc:call(Node, application, set_env, [blockchain, peer_cache_timeout, PeerCacheTimeout]),
                                 ct_rpc:call(Node, application, set_env, [blockchain, sc_client_handler, sc_client_test_handler]),
                                 ct_rpc:call(Node, application, set_env, [blockchain, sc_packet_handler, sc_packet_test_handler]),
-                                %% to test the state channel client/server over grpc set the env var below
-                                ct_rpc:call(Node, application, set_env, [blockchain, sc_client_transport_handler, blockchain_state_channel_handler]),
+                                ct_rpc:call(Node, application, set_env, [blockchain, sc_client_transport_handler, SCClientTransportHandler]),
                                 {ok, StartedApps} = ct_rpc:call(Node, application, ensure_all_started, [blockchain]),
 
                                 ct:pal("Node: ~p, StartedApps: ~p", [Node, StartedApps])

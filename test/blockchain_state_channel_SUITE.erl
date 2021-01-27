@@ -4,7 +4,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("blockchain_ct_utils.hrl").
 
--export([all/0, init_per_testcase/2, end_per_testcase/2]).
+-export([groups/0, all/0, test_cases/0, init_per_group/2, end_per_group/2, init_per_testcase/2, end_per_testcase/2]).
 
 -export([
     basic_test/1,
@@ -34,7 +34,20 @@
 %% COMMON TEST CALLBACK FUNCTIONS
 %%--------------------------------------------------------------------
 
+groups() ->
+    [{sc_libp2p,
+      [],
+      test_cases()
+     },
+     {sc_grpc,
+      [],
+      test_cases()
+     }].
+
 all() ->
+    [{group, sc_libp2p}, {group, sc_grpc}].
+
+test_cases() ->
     [
         basic_test,
         full_test,
@@ -59,6 +72,11 @@ all() ->
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
+init_per_group(sc_libp2p, Config) ->
+    [{sc_client_transport_handler, blockchain_state_channel_handler} | Config];
+init_per_group(sc_grpc, Config) ->
+    [{sc_client_transport_handler, blockchain_grpc_sc_client_test_handler} | Config].
+
 init_per_testcase(basic_test, Config) ->
     BaseDir = "data/blockchain_state_channel_SUITE/" ++ erlang:atom_to_list(basic_test),
     [{base_dir, BaseDir} |Config];
@@ -135,6 +153,8 @@ end_per_testcase(basic_test, _Config) ->
 end_per_testcase(Test, Config) ->
     blockchain_ct_utils:end_per_testcase(Test, Config).
 
+end_per_group(_, _Config) ->
+    ok.
 
 %%--------------------------------------------------------------------
 %% TEST CASES
