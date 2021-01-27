@@ -18,12 +18,12 @@ typecheck:
 cover:
 	$(REBAR) cover
 
-ci:
+ci: | $(grpc_services_directory)
 	$(REBAR) dialyzer && $(REBAR) do eunit, ct
 	$(REBAR) do cover,covertool generate
 	codecov --required -f _build/test/covertool/blockchain.covertool.xml
 
-ci-nightly:
+ci-nightly: | $(grpc_services_directory)
 	$(REBAR) do eunit,ct,eqc -t 600
 	cp -f _build/eqc/cover/eqc.coverdata _build/test/cover/
 	$(REBAR) do cover,covertool generate
