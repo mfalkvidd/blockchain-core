@@ -3587,8 +3587,6 @@ invoke_commit_hooks(Changes, Filters) ->
 
       end).
 
-prewarm_gateways(delayed, _Height, _Ledger, _GwCache) ->
-    ok;
 prewarm_gateways(active, Height, Ledger, GwCache) ->
    GWList = ets:foldl(fun({_, ?CACHE_TOMBSTONE}, Acc) ->
                               Acc;
@@ -3600,7 +3598,10 @@ prewarm_gateways(active, Height, Ledger, GwCache) ->
                               [{Key, Value} | Acc]
                       end, [], GwCache),
     %% best effort here
-    try blockchain_gateway_cache:bulk_put(Height, GWList) catch _:_ -> ok end.
+    try blockchain_gateway_cache:bulk_put(Height, GWList) catch _:_ -> ok end;
+prewarm_gateways(_, _, _, _) ->
+    %% Don't prewarm if the ledger mode is anything other than active
+    ok.
 
 %% @doc Increment a binary for the purposes of lexical sorting
 -spec increment_bin(binary()) -> binary().
