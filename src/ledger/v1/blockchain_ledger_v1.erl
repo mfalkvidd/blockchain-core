@@ -2939,7 +2939,8 @@ clean_aux(L) ->
     case has_aux(L) of
         true ->
             catch ok = rocksdb:close(L#ledger_v1.aux#aux_ledger_v1.db),
-            rocksdb:destroy(L#ledger_v1.aux#aux_ledger_v1.dir, []);
+            DBDir = filename:join(L#ledger_v1.aux#aux_ledger_v1.dir, ?DB_FILE),
+            rocksdb:destroy(DBDir, []);
         false ->
             ok
     end.
