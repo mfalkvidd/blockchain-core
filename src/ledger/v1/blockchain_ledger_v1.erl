@@ -348,9 +348,9 @@ new(Dir) ->
             routing=DelayedRoutingCF,
             subnets=DelayedSubnetsCF,
             state_channels=DelayedSCsCF,
-            h3dex=DelayedH3DexCF,
-            commit_hooks = Hooks
-        }
+            h3dex=DelayedH3DexCF
+        },
+        commit_hooks = Hooks
     }).
 
 new_aux(Ledger) ->
