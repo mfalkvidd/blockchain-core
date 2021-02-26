@@ -294,13 +294,15 @@ calculate_poc_challengee_rewards(Txn, #{ poc_challengee := ChallengeeMap } = Acc
                                  Chain, Ledger, #{ var_map := VarMap } = Vars) ->
     Path = blockchain_txn_poc_receipts_v1:path(Txn),
     NewCM = poc_challengees_rewards_(Vars, Path, Path, Txn, Chain, Ledger, true, VarMap, ChallengeeMap),
-    Acc#{ challengee_map => NewCM }.
+    Acc#{ poc_challengee => NewCM }.
 
-calculate_poc_witness_rewards(Txn, AccIn, Chain, Ledger, Vars) ->
-    AccIn.
+calculate_poc_witness_rewards(Txn, #{ poc_witness := WitnessMap } = Acc, Chain, Ledger, Vars) ->
+    NewWM = poc_witness_reward(Txn, WitnessMap, Chain, Ledger, Vars),
+    Acc#{ poc_witness => NewWM }.
 
-calculate_dc_rewards(Txn, AccIn, Chain, Ledger, Vars) ->
-    AccIn.
+calculate_dc_rewards(Txn, #{ dc_reward := DCRewardMap } = Acc, Chain, Ledger, Vars) ->
+    NewDCM = dc_reward(Txn, DCRewardMap, Chain, Ledger, Vars),
+    Acc#{ dc_reward := NewDCM }.
 
 
 %%-spec get_rewards_for_epoch(non_neg_integer(), non_neg_integer(),
@@ -885,152 +887,44 @@ poc_witness_reward(Txn, AccIn,
     catch
         What:Why:ST ->
             lager:error("failed to calculate poc_witnesses_rewards, error ~p:~p:~p", [What, Why, ST]),
-            Acc0
+            AccIn
     end;
-
-
-
-%%-spec poc_witnesses_rewards(Transactions :: blockchain_txn:txns(),
-%%                            Vars :: map(),
-%%                            Chain :: blockchain:blockchain(),
-%%                            Ledger :: blockchain_ledger_v1:ledger(),
-%%                            WitnessRewards :: map(),
-%%                            VarMap :: blockchain_hex:var_map()) ->
-%%    #{{gateway, libp2p_crypto:pubkey_bin()} => non_neg_integer()}.
-%%poc_witnesses_rewards(Transactions,
-%%                      #{poc_version := POCVersion}=Vars,
-%%                      Chain,
-%%                      Ledger,
-%%                      WitnessRewards,
-%%                      VarMap) ->
-%%    WitnessRedundancy = maps:get(witness_redundancy, Vars, undefined),
-%%    DecayRate = maps:get(poc_reward_decay_rate, Vars, undefined),
-%%    DensityTgtRes = maps:get(density_tgt_res, Vars, undefined),
-%%    lists:foldl(
-%%        fun(Txn, Acc0) ->
-%%            case blockchain_txn:type(Txn) == blockchain_txn_poc_receipts_v1 of
-%%                false ->
-%%                    Acc0;
-%%                true ->
-%%                    case POCVersion of
-%%                        V when is_integer(V), V >= 9 ->
-%%                            try
-%%                                %% Get channels without validation
-%%                                {ok, Channels} = blockchain_txn_poc_receipts_v1:get_channels(Txn, Chain),
-%%                                Path = blockchain_txn_poc_receipts_v1:path(Txn),
-%%
-%%                                %% Do the new thing for witness filtering
-%%                                Res = lists:foldl(
-%%                                  fun(Elem, Acc1) ->
-%%                                          ElemPos = blockchain_utils:index_of(Elem, Path),
-%%                                          WitnessChannel = lists:nth(ElemPos, Channels),
-%%                                          case blockchain_txn_poc_receipts_v1:valid_witnesses(Elem, WitnessChannel, Ledger) of
-%%                                              [] ->
-%%                                                  Acc1;
-%%                                              ValidWitnesses ->
-%%                                                  %% We found some valid witnesses, we only apply the witness_redundancy and decay_rate if BOTH
-%%                                                  %% are set as chain variables, otherwise we default to the old behavior and set ToAdd=1
-%%                                                  %%
-%%                                                  %% If both witness_redundancy and decay_rate are set, we calculate a scaled rx unit (the value ToAdd)
-%%                                                  %% This is determined using the formulae mentioned in hip15
-%%                                                  ToAdd = case {WitnessRedundancy, DecayRate} of
-%%                                                              {undefined, _} -> 1;
-%%                                                              {_, undefined} -> 1;
-%%                                                              {N, R} ->
-%%                                                                  W = length(ValidWitnesses),
-%%                                                                  U = poc_witness_reward_unit(R, W, N),
-%%                                                                  U
-%%                                                          end,
-%%
-%%                                                  case DensityTgtRes of
-%%                                                      undefined ->
-%%                                                          %% old (HIP15)
-%%                                                          lists:foldl(
-%%                                                            fun(WitnessRecord, Acc2) ->
-%%                                                                    Witness = blockchain_poc_witness_v1:gateway(WitnessRecord),
-%%                                                                    I = maps:get(Witness, Acc2, 0),
-%%                                                                    maps:put(Witness, I+ToAdd, Acc2)
-%%                                                            end,
-%%                                                            Acc1,
-%%                                                            ValidWitnesses
-%%                                                           );
-%%                                                      D ->
-%%                                                          %% new (HIP17)
-%%                                                          lists:foldl(
-%%                                                            fun(WitnessRecord, Acc2) ->
-%%                                                                    Challengee = blockchain_poc_path_element_v1:challengee(Elem),
-%%                                                                    %% This must always be {ok, ...}
-%%                                                                    {ok, ChallengeeGw} = blockchain_ledger_v1:find_gateway_info(Challengee, Ledger),
-%%                                                                    %% Challengee must have a location
-%%                                                                    ChallengeeLoc = blockchain_ledger_gateway_v2:location(ChallengeeGw),
-%%                                                                    Witness = blockchain_poc_witness_v1:gateway(WitnessRecord),
-%%                                                                    %% The witnesses get scaled by the value of their transmitters
-%%                                                                    RxScale = blockchain_utils:normalize_float(
-%%                                                                                blockchain_hex:scale(ChallengeeLoc,
-%%                                                                                                   VarMap,
-%%                                                                                                   D,
-%%                                                                                                   Ledger)),
-%%                                                                    Value = blockchain_utils:normalize_float(ToAdd * RxScale),
-%%                                                                    I = maps:get(Witness, Acc2, 0),
-%%                                                                    maps:put(Witness, I+Value, Acc2)
-%%                                                            end,
-%%                                                            Acc1,
-%%                                                            ValidWitnesses
-%%                                                           )
-%%                                                  end
-%%                                          end
-%%                                  end,
-%%                                  Acc0,
-%%                                  Path
-%%                                 ),
-%%                                Res
-%%                            catch What:Why:ST ->
-%%                                  lager:error("failed to calculate poc_witnesses_rewards, error ~p:~p:~p", [What, Why, ST]),
-%%                                  Acc0
-%%                            end;
-%%                        V when is_integer(V), V > 4 ->
-%%                            lists:foldl(
-%%                              fun(Elem, Acc1) ->
-%%                                      case blockchain_txn_poc_receipts_v1:good_quality_witnesses(Elem, Ledger) of
-%%                                          [] ->
-%%                                              Acc1;
-%%                                          GoodQualityWitnesses ->
-%%                                              lists:foldl(
-%%                                                fun(WitnessRecord, Map) ->
-%%                                                        Witness = blockchain_poc_witness_v1:gateway(WitnessRecord),
-%%                                                        I = maps:get(Witness, Map, 0),
-%%                                                        maps:put(Witness, I+1, Map)
-%%                                                end,
-%%                                                Acc1,
-%%                                                GoodQualityWitnesses
-%%                                               )
-%%                                      end
-%%                              end,
-%%                              Acc0,
-%%                              blockchain_txn_poc_receipts_v1:path(Txn)
-%%                             );
-%%                        _ ->
-%%                            lists:foldl(
-%%                              fun(Elem, Acc1) ->
-%%                                      lists:foldl(
-%%                                        fun(WitnessRecord, Map) ->
-%%                                                Witness = blockchain_poc_witness_v1:gateway(WitnessRecord),
-%%                                                I = maps:get(Witness, Map, 0),
-%%                                                maps:put(Witness, I+1, Map)
-%%                                        end,
-%%                                        Acc1,
-%%                                        blockchain_poc_path_element_v1:witnesses(Elem)
-%%                                       )
-%%                              end,
-%%                              Acc0,
-%%                              blockchain_txn_poc_receipts_v1:path(Txn)
-%%                             )
-%%                    end
-%%            end
-%%        end,
-%%        WitnessRewards,
-%%        Transactions
-%%    ).
+poc_witness_reward(Txn, AccIn, _Chain, Ledger,
+                   #{ poc_version := POCVersion }) when is_integer(POCVersion)
+                                                        andalso POCVersion > 4 ->
+    lists:foldl(
+      fun(Elem, A) ->
+              case blockchain_txn_poc_receipts_v1:good_quality_witnesses(Elem, Ledger) of
+                  [] ->
+                      A;
+                  GoodQualityWitnesses ->
+                      lists:foldl(
+                        fun(WitnessRecord, Map) ->
+                                Witness = blockchain_poc_witness_v1:gateway(WitnessRecord),
+                                I = maps:get(Witness, Map, 0),
+                                maps:put(Witness, I+1, Map)
+                        end,
+                        A,
+                        GoodQualityWitnesses)
+              end
+      end,
+      AccIn,
+      blockchain_txn_poc_receipts_v1:path(Txn)
+     );
+poc_witness_reward(Txn, AccIn, _Chain, _Ledger, _Vars) ->
+    lists:foldl(
+      fun(Elem, A) ->
+              lists:foldl(
+                fun(WitnessRecord, Map) ->
+                        Witness = blockchain_poc_witness_v1:gateway(WitnessRecord),
+                        I = maps:get(Witness, Map, 0),
+                        maps:put(Witness, I+1, Map)
+                end,
+                A,
+                blockchain_poc_path_element_v1:witnesses(Elem))
+      end,
+      AccIn,
+      blockchain_txn_poc_receipts_v1:path(Txn)).
 
 normalize_witness_rewards(WitnessRewards, #{epoch_reward := EpochReward,
                                             poc_witnesses_percent := PocWitnessesPercent}=Vars) ->
@@ -1070,6 +964,8 @@ scan_grace_block(Current, Start, End, Vars, Chain, Ledger, Acc) ->
             scan_grace_block(Current+1, Start, End, Vars, Chain, Ledger,
                              dc_rewards(Txns, End, Vars, Ledger, Acc))
     end.
+
+dc_reward(Txn, AccIn, Chain, Ledger, #{ sc_grace_blocks := GraceBlocks, sc_version := 2} = Vars) ->
 
 dc_rewards(Transactions, EndHeight, #{sc_grace_blocks := GraceBlocks, sc_version := 2} = Vars, Ledger, DCRewards) ->
     lists:foldl(
