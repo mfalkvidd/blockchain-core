@@ -196,7 +196,7 @@ wrap_txn(#blockchain_txn_gen_price_oracle_v1_pb{}=Txn) ->
 wrap_txn(#blockchain_txn_transfer_hotspot_v1_pb{}=Txn) ->
     #blockchain_txn_pb{txn={transfer_hotspot, Txn}};
 wrap_txn(#blockchain_txn_rewards_v2_pb{}=Txn) ->
-    #blockchain_txn_pb{txn={rewards_v2, Txn}};
+    #blockchain_txn_pb{txn={rewards_v2, Txn}}.
 
 -spec unwrap_txn(#blockchain_txn_pb{}) -> blockchain_txn:txn().
 unwrap_txn(#blockchain_txn_pb{txn={bundle, #blockchain_txn_bundle_v1_pb{transactions=Txns} = Bundle}}) ->
