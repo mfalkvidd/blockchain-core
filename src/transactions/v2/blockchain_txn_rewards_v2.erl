@@ -94,23 +94,13 @@ is_valid(Txn, Chain) ->
 -spec absorb(txn_rewards_v2(), blockchain:blockchain()) -> ok | {error, atom()} | {error, {atom(), any()}}.
 absorb(Txn, Chain) ->
     Ledger = blockchain:ledger(Chain),
-    Rewards = ?MODULE:rewards(Txn),
-    AccRewards = lists:foldl(
-        fun(Reward, Acc) ->
+    lists:foreach(
+        fun(Reward) ->
             Account = blockchain_txn_reward_v2:account(Reward),
             Amount = blockchain_txn_reward_v2:amount(Reward),
-            Total = maps:get(Account, Acc, 0),
-            maps:put(Account, Total + Amount, Acc)
+            ok = blockchain_ledger_v1:credit_account(Account, Amount, Ledger)
         end,
-        #{},
-        Rewards
-    ),
-    maps:fold(
-        fun(Account, Amount, _) ->
-            blockchain_ledger_v1:credit_account(Account, Amount, Ledger)
-        end,
-        ok,
-        AccRewards
+        ?MODULE:rewards(Txn)
     ).
 
 -spec calculate_rewards(non_neg_integer(), non_neg_integer(), blockchain:blockchain()) ->
@@ -166,7 +156,8 @@ calculate_rewards(Start, End, Chain) ->
         {ok, prepare_rewards_v2_txns(Results, Ledger)}
     catch
         C:Error:Stack ->
-            lager:error("Caught ~p; couldn't calculate rewards because: ~p~n~p", [C, Error, Stack])
+            lager:error("Caught ~p; couldn't calculate rewards because: ~p~n~p", [C, Error, Stack]),
+            Error
     end.
 
 -spec print(txn_rewards_v2()) -> iodata().
@@ -312,8 +303,8 @@ prepare_rewards_v2_txns(Results, Ledger) ->
               maps:iterator(AllRewards)). %% again, bound memory no matter size of map
 
 
-%% @doc The environment variable `rewards_metadata_callback' should be specified
-%% using a `{Module, Function}' style definition. The callback will get a granular
+%% @doc The environment variable `rewards_v2_metadata_callback' should be specified
+%% using `{Module, Function}' style. This callback if defined, will get a detailed
 %% rewards map and a "frozen" copy of the ledger data at the end of the rewards
 %% epoch that is being tabulated for any data lookups that need to happen inside
 %% of the callback.
@@ -328,20 +319,33 @@ prepare_rewards_v2_txns(Results, Ledger) ->
 %%    <li>securities_rewards</li>
 %%    <li>overages</li>
 %% </ul>
+%%
+%% Each of the keys is itself a map which has the shape of
+%% #{ Entry => Amount } where Entry is defined as a tuple
+%% of `{gateway, reward_type, Gateway}' or
+%% `{owner, reward_type, Owner}'
+%%
+%% The callback is called from a spawn inside of the rewards
+%% calculation so as not to block execution with the
+%% callback. Failures inside the callback function will be
+%% caught and printed as a warning level message in the logs.
 -spec maybe_use_rewards_metadata_callback(map(), blockchain_ledger_v1:ledger()) -> ok.
 maybe_use_rewards_metadata_callback(Results, Ledger) ->
-    case application:get_env(blockchain_core, rewards_metadata_callback, undefined) of
+    case application:get_env(blockchain_core, rewards_v2_metadata_callback, undefined) of
         undefined -> ok;
         {Mod, Fun} ->
-            try
-              _ = Mod:Fun(Results, Ledger),
-              ok
-            catch
-                _:Error:St ->
-                    lager:warning("Reward callback ~p:~p failed because ~p:~n~p",
-                                  [Mod, Fun, Error, St]),
-                    ok
-            end
+            spawn(fun() ->
+                          try
+                              _ = Mod:Fun(Results, Ledger),
+                              ok
+                          catch
+                              _:Error:St ->
+                                  lager:warning("Reward callback ~p:~p failed because ~p:~n~p",
+                                                [Mod, Fun, Error, St]),
+                                  ok
+                          end % end catch
+                  end), % end spawn
+            ok
     end.
 
 -spec get_reward_vars(pos_integer(), pos_integer(), blockchain_ledger_v1:ledger()) -> map().
