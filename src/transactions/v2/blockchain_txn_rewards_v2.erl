@@ -163,7 +163,7 @@ calculate_rewards(Start, End, Chain) ->
         %% cache invalidation issues.
         true = blockchain_hex:destroy_memoization(),
 
-        {ok, prepare_rewards_v2_transaction(Start, End, Results, Ledger)}
+        {ok, prepare_rewards_v2_txns(Results, Ledger)}
     catch
         C:Error:Stack ->
             lager:error("Caught ~p; couldn't calculate rewards because: ~p~n~p", [C, Error, Stack])
@@ -266,7 +266,7 @@ finalize_reward_calculations(AccIn, Ledger, Vars) ->
             consensus_rewards => ConsensusRewards,
             securities_rewards => SecuritiesRewards }.
 
-prepare_rewards_v2_transaction(Start, End, Results, Ledger) ->
+prepare_rewards_v2_txns(Results, Ledger) ->
     maybe_use_rewards_metadata_callback(Results, Ledger),
     %% we are going to fold over a list of keys in the rewards map (Results)
     %% and generate a new map which has _all_ the owners and the sum of
@@ -305,13 +305,12 @@ prepare_rewards_v2_transaction(Start, End, Results, Ledger) ->
     %% now we are going to fold over all rewards and construct our
     %% transaction for the blockchain
 
-    RTxns = maps:fold(fun(Owner, Amount, Acc) ->
+    maps:fold(fun(Owner, Amount, Acc) ->
                       [ blockchain_txn_reward_v2:new(Owner, Amount) | Acc ]
               end,
               [],
-              maps:iterator(AllRewards)), %% again, bound memory no matter size of map
+              maps:iterator(AllRewards)). %% again, bound memory no matter size of map
 
-    new(Start, End, RTxns).
 
 %% @doc The environment variable `rewards_metadata_callback' should be specified
 %% using a `{Module, Function}' style definition. The callback will get a granular
