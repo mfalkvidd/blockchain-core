@@ -558,7 +558,11 @@ deserialize(<<2, Bin/binary>>) ->
                 G1 = list_to_tuple(L1),
                 neighbors([], G1);
             13 ->
-                Gw;
+                %% pre gain, elevation, mode update
+                L = tuple_to_list(Gw),
+                %% add defaults for gain, elevation and mode
+                L1 = lists:append(L, [?DEFAULT_GAIN, ?DEFAULT_ELEVATION, full]),
+                list_to_tuple(L1);
             16 ->
                 Gw
         end,
