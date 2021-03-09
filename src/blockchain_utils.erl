@@ -35,7 +35,6 @@
     do_calculate_dc_amount/2,
     deterministic_subset/3,
     fold_condition_checks/1,
-    get_antenna_gains_from_var/1,
 
     %% exports for simulations
     free_space_path_loss/4,
@@ -491,14 +490,6 @@ do_condition_check([{Condition, Error}|Tail], _PrevErr, true) ->
 
 majority(N) ->
     (N div 2) + 1.
-
-%%--------------------------------------------------------------------
-%% @doc Get allowed antenna gains from var
-%% @end
-%%--------------------------------------------------------------------
--spec get_antenna_gains_from_var(Value :: binary()) -> [pos_integer()].
-get_antenna_gains_from_var(Value) ->
-    [list_to_integer(I) || I <- string:tokens(binary:bin_to_list(Value), ",")].
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

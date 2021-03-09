@@ -35,7 +35,8 @@ init_per_testcase(TestCase, Config) ->
                   txn_fees => true,
                   staking_fee_txn_assert_location_v1 => 1000000,
                   assert_loc_txn_version => 2,
-                  allowed_antenna_gains => <<"12,23,28,30,40">>
+                  min_antenna_gain => 10,
+                  max_antenna_gain => 150
                  },
 
     {ok, GenesisMembers, _GenesisBlock, ConsensusMembers, Keys} =

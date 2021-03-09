@@ -239,9 +239,9 @@ is_valid_owner(#blockchain_txn_assert_location_v2_pb{owner=PubKeyBin,
 is_valid_location(#blockchain_txn_assert_location_v2_pb{location=Location}, MinH3Res) ->
     h3:get_resolution(h3:from_string(Location)) >= MinH3Res.
 
--spec is_valid_gain(txn_assert_location(), [pos_integer()]) -> boolean().
-is_valid_gain(#blockchain_txn_assert_location_v2_pb{gain=Gain}, AllowedGains) ->
-    lists:member(Gain, AllowedGains).
+-spec is_valid_gain(txn_assert_location(), pos_integer(), pos_integer()) -> boolean().
+is_valid_gain(#blockchain_txn_assert_location_v2_pb{gain=Gain}, MinGain, MaxGain) ->
+    lists:member(Gain, lists:seq(MinGain, MaxGain)).
 
 -spec is_valid_payer(txn_assert_location()) -> boolean().
 is_valid_payer(#blockchain_txn_assert_location_v2_pb{payer=undefined}) ->
@@ -272,28 +272,32 @@ is_valid(Txn, Chain) ->
 
     case blockchain:config(?assert_loc_txn_version, Ledger) of
         {ok, V} when V >= 2 ->
-            case blockchain:config(?allowed_antenna_gains, Ledger) of
-                {ok, AllowedGains0} ->
-                    AllowedGains = blockchain_utils:get_antenna_gains_from_var(AllowedGains0),
-                    case is_valid_gain(Txn, AllowedGains) of
-                        false ->
-                            {error, {invalid_assert_loc_txn_v2, {invalid_antenna_gain, Gain, AllowedGains}}};
-                        true ->
-                            Res = blockchain_txn:validate_fields([{{gateway, Gateway}, {address, libp2p}},
-                                                                  {{owner, Owner}, {address, libp2p}},
-                                                                  {{payer, Payer}, {address, libp2p}},
-                                                                  {{location, Location}, {is_integer, 0}},
-                                                                  {{elevation, Elevation}, {is_integer, -2147483648}}
-                                                                 ]),
+            case blockchain:config(?min_antenna_gain, Ledger) of
+                {ok, MinGain} ->
+                    case blockchain:config(?max_antenna_gain, Ledger) of
+                        {ok, MaxGain} ->
+                            case is_valid_gain(Txn, MinGain, MaxGain) of
+                                false ->
+                                    {error, {invalid_assert_loc_txn_v2, {invalid_antenna_gain, Gain, MinGain, MaxGain}}};
+                                true ->
+                                    Res = blockchain_txn:validate_fields([{{gateway, Gateway}, {address, libp2p}},
+                                                                          {{owner, Owner}, {address, libp2p}},
+                                                                          {{payer, Payer}, {address, libp2p}},
+                                                                          {{location, Location}, {is_integer, 0}},
+                                                                          {{elevation, Elevation}, {is_integer, -2147483648}}
+                                                                         ]),
 
-                            case Res of
-                                {error, _}=E -> E;
-                                ok ->
-                                    do_is_valid_checks(Txn, Chain)
-                            end
+                                    case Res of
+                                        {error, _}=E -> E;
+                                        ok ->
+                                            do_is_valid_checks(Txn, Chain)
+                                    end
+                            end;
+                        _ ->
+                            {error, {invalid_assert_loc_txn_v2, max_antenna_gain_not_set}}
                     end;
                 _ ->
-                    {error, {invalid_assert_loc_txn_v2, allowed_antenna_gains_not_set}}
+                    {error, {invalid_assert_loc_txn_v2, min_antenna_gain_not_set}}
             end;
         _ ->
             {error, {invalid_assert_loc_txn_v2, insufficient_assert_loc_txn_version}}

@@ -408,10 +408,6 @@
 %% Allowed values: 1, 2
 -define(assert_loc_txn_version, assert_loc_txn_version).
 
-%% NOTE: Allowed values: <<"12,23,28,30,40">>
-%% Each value is x10, so 12 is actually equal to 1.2 dBi
-%% To add a value, the validation must be updated
-%%
 %% Known antenna gains:
 %% Helium Hotspot (US 915) - 1.2 dBi
 %% Helium Hotspot (EU 868) - 2.3 dBi
@@ -422,5 +418,9 @@
 %% Syncrob.it (US 915) - 1.2 dBi
 %% Syncrob.it (EU 868) - 2.3 dBi
 
--define(allowed_antenna_gains, allowed_antenna_gains).
+%% NOTE: Allow min_antenna_gain - max_antenna_gain (both inclusive)
+%% Both will be set as dBi x 10, so, 1 dBi = 10, 15 dBi = 150,
+%% Any gain value between min-max is acceptable
+-define(min_antenna_gain, min_antenna_gain).        %% Set to 10 (1 dBi)
+-define(max_antenna_gain, max_antenna_gain).        %% Set to 150 (15 dBi)
 %% ------------------------------------------------------------------
