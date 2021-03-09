@@ -1112,10 +1112,26 @@ validate_var(?assert_loc_txn_version, Value) ->
         N when is_integer(N), N >= 1, N =< 2 -> ok;
         _ -> throw({error, {invalid_assert_loc_txn_version, Value}})
     end;
+validate_var(?allowed_antenna_gains, Value) ->
+    validate_allowed_antenna_gains(Value, "allowed_antenna_gains");
 
 validate_var(Var, Value) ->
     %% something we don't understand, crash
     invalid_var(Var, Value).
+
+validate_allowed_antenna_gains(Value, Var) when is_binary(Value) ->
+    %% NOTE: Add gains here to allow more antenna gains
+    %% Each of these are x10, so 12 = 1.2 dBi
+    AllowedGains = [12, 23, 28, 30, 40],
+    SubmittedGains = blockchain_utils:get_antenna_gains_from_var(Value),
+    case lists:sort(AllowedGains) == lists:sort(SubmittedGains) of
+        false ->
+            throw({error, {invalid_antenna_gains, Var, Value}});
+        true ->
+            ok
+    end;
+validate_allowed_antenna_gains(Value, Var) ->
+    throw({error, {invalid_format, Var, Value}}).
 
 validate_hip17_vars(Value, Var) when is_binary(Value) ->
     case get_density_var(Value) of

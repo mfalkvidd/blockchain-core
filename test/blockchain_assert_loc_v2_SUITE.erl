@@ -34,7 +34,8 @@ init_per_testcase(TestCase, Config) ->
     ExtraVars = #{
                   txn_fees => true,
                   staking_fee_txn_assert_location_v1 => 1000000,
-                  assert_loc_txn_version => 2
+                  assert_loc_txn_version => 2,
+                  allowed_antenna_gains => <<"12,23,28,30,40">>
                  },
 
     {ok, GenesisMembers, _GenesisBlock, ConsensusMembers, Keys} =
@@ -162,7 +163,7 @@ same_loc_diff_gain_test(Config) ->
     %% We will not change the location of the gateway but will update the gain
     %% and supply 0 staking_fee
     ZeroStakingFee = 0,
-    NewGain = 20,
+    NewGain = 23,
     SameLocDiffGainTxn0 = blockchain_txn_assert_location_v2:new(GatewayPubkeyBin, Owner, Payer, ExistingLocation, 1),
     SameLocDiffGainFee = blockchain_txn_assert_location_v2:calculate_fee(SameLocDiffGainTxn0, Chain),
     SameLocDiffGainTxn1 = blockchain_txn_assert_location_v2:fee(SameLocDiffGainTxn0, SameLocDiffGainFee),

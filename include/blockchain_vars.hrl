@@ -402,4 +402,25 @@
 -define(density_tgt_res, density_tgt_res).
 -define(hip17_interactivity_blocks, hip17_interactivity_blocks).
 
+%% ------------------------------------------------------------------
+%% assert_location_v2 transaction related vars
+
+%% Allowed values: 1, 2
 -define(assert_loc_txn_version, assert_loc_txn_version).
+
+%% NOTE: Allowed values: <<"12,23,28,30,40">>
+%% Each value is x10, so 12 is actually equal to 1.2 dBi
+%% To add a value, the validation must be updated
+%%
+%% Known antenna gains:
+%% Helium Hotspot (US 915) - 1.2 dBi
+%% Helium Hotspot (EU 868) - 2.3 dBi
+%% RAK Hotspot Miner (US 915) - 2.3 dBi
+%% RAK Hotspot Miner (EU 868) - 2.8 dBi
+%% Nebra Outdoor Hotspot - 3 dBi
+%% Bobcat Miner 300 (All) - 4 dBi
+%% Syncrob.it (US 915) - 1.2 dBi
+%% Syncrob.it (EU 868) - 2.3 dBi
+
+-define(allowed_antenna_gains, allowed_antenna_gains).
+%% ------------------------------------------------------------------
