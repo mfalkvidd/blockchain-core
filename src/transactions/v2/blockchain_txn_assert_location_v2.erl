@@ -241,7 +241,7 @@ is_valid_location(#blockchain_txn_assert_location_v2_pb{location=Location}, MinH
 
 -spec is_valid_gain(txn_assert_location(), pos_integer(), pos_integer()) -> boolean().
 is_valid_gain(#blockchain_txn_assert_location_v2_pb{gain=Gain}, MinGain, MaxGain) ->
-    lists:member(Gain, lists:seq(MinGain, MaxGain)).
+    not (Gain < MinGain orelse Gain > MaxGain).
 
 -spec is_valid_payer(txn_assert_location()) -> boolean().
 is_valid_payer(#blockchain_txn_assert_location_v2_pb{payer=undefined}) ->
@@ -639,5 +639,26 @@ to_json_test() ->
     Json = to_json(Tx, []),
     ?assert(lists:all(fun(K) -> maps:is_key(K, Json) end,
                       [type, hash, gateway, owner, payer, location, nonce, staking_fee, fee])).
+
+is_valid_gain_test() ->
+    MinGain = 10,
+    MaxGain = 150,
+    Tx = new(),
+    InvT1 = gain(Tx, 9),
+    InvT2 = gain(Tx, 8),
+    InvT3 = gain(Tx, 151),
+    InvT4 = gain(Tx, 152),
+    ValidT1 = gain(Tx, 10),
+    ValidT2 = gain(Tx, 11),
+    ValidT3 = gain(Tx, 150),
+    ValidT4 = gain(Tx, 149),
+    ?assertNot(is_valid_gain(InvT1, MinGain, MaxGain)),
+    ?assertNot(is_valid_gain(InvT2, MinGain, MaxGain)),
+    ?assertNot(is_valid_gain(InvT3, MinGain, MaxGain)),
+    ?assertNot(is_valid_gain(InvT4, MinGain, MaxGain)),
+    ?assert(is_valid_gain(ValidT1, MinGain, MaxGain)),
+    ?assert(is_valid_gain(ValidT2, MinGain, MaxGain)),
+    ?assert(is_valid_gain(ValidT3, MinGain, MaxGain)),
+    ?assert(is_valid_gain(ValidT4, MinGain, MaxGain)).
 
 -endif.
