@@ -32,6 +32,7 @@
     is_valid/2,
     absorb/2,
     calculate_rewards/3,
+    reward_account/1,
     print/1,
     to_json/2
 ]).
@@ -42,14 +43,20 @@
 
 -type txn_rewards_v2() :: #blockchain_txn_rewards_v2_pb{}.
 -type reward_v2() :: #blockchain_txn_reward_v2_pb{}.
--type rewards_share_map() :: #{ libp2p_crypto:pubkey_bin() => pos_integer() }.
+-type base_rewards_share_map() :: #{ libp2p_crypto:pubkey_bin() => non_neg_integer() }.
+-type dc_rewards_share_map() :: #{ seen => [ blockchain_txn_state_channel_v1:state_channel_id() ],
+                                   libp2p_crypto:pubkey_bin() => non_neg_integer() }.
+-type rewards_share_map() :: base_rewards_share_map() | dc_rewards_share_map() | #{}.
 -type reward_vars() :: map().
 -type reward_types() :: poc_challenger | poc_challengee | poc_witness | data_credits | securities | consensus.
 -type owner_reward() :: {owner, reward_types(), libp2p_crypto:pubkey_bin()}.
 -type gateway_reward() :: {gateway, reward_types(), libp2p_crypto:pubkey_bin()}.
--type rewards_map() :: #{ owner_reward() | gateway_reward() => pos_integer() }.
--type metadata_key() :: poc_challenger | poc_challengee | poc_witness | dc_rewards | securities_rewards | consensus_rewards | overages.
--type rewards_metadata() :: #{ metadata_key() => rewards_map() }.
+-type rewards_map() :: #{ owner_reward() | gateway_reward() => non_neg_integer() }.
+-type metadata_key() :: poc_challenger | poc_challengee | poc_witness | dc_rewards | securities_rewards | consensus_rewards.
+-type rewards_share_metadata() :: #{ metadata_key() => rewards_share_map(),
+                                     overages => non_neg_integer() }.
+-type rewards_metadata() :: #{ metadata_key() => rewards_map(),
+                               overages => non_neg_integer() }.
 -export_type([txn_rewards_v2/0]).
 
 -spec new(non_neg_integer(), non_neg_integer(), [reward_v2()]) -> txn_rewards_v2().
@@ -57,7 +64,7 @@ new(Start, End, Rewards) ->
     SortedRewards = lists:sort(Rewards),
     #blockchain_txn_rewards_v2_pb{start_epoch=Start, end_epoch=End, rewards=SortedRewards}.
 
--spec hash(txn_rewards_v2()) -> blockchain_txn:hash().
+-spec hash(txn_rewards_v2()|reward_v2()) -> blockchain_txn:hash().
 hash(Txn) ->
     EncodedTxn = blockchain_txn_rewards_v2_pb:encode_msg(Txn),
     crypto:hash(sha256, EncodedTxn).
@@ -91,8 +98,8 @@ is_valid(Txn, Chain) ->
             Error;
         {ok, CalRewards} ->
             TxnRewards = ?MODULE:rewards(Txn),
-            CalRewardsHashes = [reward_v2_hash(R)|| R <- CalRewards],
-            TxnRewardsHashes = [reward_v2_hash(R)|| R <- TxnRewards],
+            CalRewardsHashes = [hash(R)|| R <- CalRewards],
+            TxnRewardsHashes = [hash(R)|| R <- TxnRewards],
             case CalRewardsHashes == TxnRewardsHashes of
                 false -> {error, invalid_rewards_v2};
                 true -> ok
@@ -166,12 +173,19 @@ calculate_rewards(Start, End, Chain) ->
             Error
     end.
 
+%% @doc This function is used by `blockchain_txn' to pull the account
+%% owner out of a reward_v2() record for the actor/1 fun. This is here
+%% so that we can pretend there's a semblance of encapsulation for
+%% this record type.
+-spec reward_account(reward_v2()) -> libp2p_crypto:pubkey_bin().
+reward_account(#blockchain_txn_reward_v2_pb{account=Account}) -> Account.
+
 -spec print(txn_rewards_v2()) -> iodata().
 print(undefined) -> <<"type=rewards_v2 undefined">>;
 print(#blockchain_txn_rewards_v2_pb{start_epoch=Start,
                                     end_epoch=End,
                                     rewards=Rewards}) ->
-    PrintableRewards = [blockchain_txn_reward_v2:print(R) || R <- Rewards],
+    PrintableRewards = [ print_reward(R) || R <- Rewards],
     io_lib:format("type=rewards_v2 start_epoch=~p end_epoch=~p rewards=~p",
                   [Start, End, PrintableRewards]).
 
@@ -182,25 +196,40 @@ to_json(Txn, _Opts) ->
       hash => ?BIN_TO_B64(hash(Txn)),
       start_epoch => start_epoch(Txn),
       end_epoch => end_epoch(Txn),
-      rewards => [blockchain_txn_reward_v2:to_json(R, []) || R <- rewards(Txn)]
+      rewards => [ reward_to_json(R, []) || R <- rewards(Txn)]
      }.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec reward_v2_hash( #blockchain_txn_reward_v2_pb{} ) -> binary().
-reward_v2_hash(Reward) ->
-    EncodedTxn = blockchain_txn_reward_v2_pb:encode_msg(Reward),
-    crypto:hash(sha256, EncodedTxn).
+-spec print_reward( reward_v2() ) -> iodata().
+print_reward(#blockchain_txn_reward_v2_pb{account = Account, amount = Amt}) ->
+    io_lib:format("type=reward_v2 account=~p amount=~p",
+                  [Account, Amt]).
 
+-spec reward_to_json( Reward :: reward_v2(),
+                      Opts :: blockchain_json:opts() ) -> blockchain_json:json_object().
+reward_to_json(#blockchain_txn_reward_v2_pb{account = Account,
+                                            amount = Amt} = Txn, _Opts) ->
+    #{
+      type => <<"reward_v2">>,
+      hash => ?BIN_TO_B64(hash(Txn)),
+      account => ?BIN_TO_B58(Account),
+      amount => Amt
+     }.
+
+-spec new_reward( Account :: libp2p_crypto:pubkey_bin(),
+                  Amount :: non_neg_integer() ) -> reward_v2().
+new_reward(Account, Amount) ->
+    #blockchain_txn_reward_v2_pb{account=Account, amount=Amount}.
 
 -spec fold_blocks_for_rewards( Current :: pos_integer(),
                                End :: pos_integer(),
                                Chain :: blockchain:blockchain(),
                                Vars :: reward_vars(),
                                Ledger :: blockchain_ledger_v1:ledger(),
-                               Acc :: rewards_metadata() ) -> rewards_metadata().
+                               Acc :: rewards_share_metadata() ) -> rewards_share_metadata().
 fold_blocks_for_rewards(Current, End, _Chain, _Vars, _Ledger, Acc) when Current == End + 1 -> Acc;
 fold_blocks_for_rewards(Current, End, Chain, Vars, Ledger, Acc) ->
     case blockchain:get_block(Current, Chain) of
@@ -218,10 +247,10 @@ fold_blocks_for_rewards(Current, End, Chain, Vars, Ledger, Acc) ->
 -spec calculate_reward_for_txn( Type :: atom(),
                                 Txn :: blockchain_txn:txn(),
                                 End :: pos_integer(),
-                                Acc :: rewards_metadata(),
+                                Acc :: rewards_share_metadata(),
                                 Chain :: blockchain:blockchain(),
                                 Ledger :: blockchain_ledger_v1:ledger(),
-                                Vars :: reward_vars() ) -> rewards_metadata().
+                                Vars :: reward_vars() ) -> rewards_share_metadata().
 calculate_reward_for_txn(?MODULE, _Txn, _End, _Acc, _Chain,
                          _Ledger, _Vars) -> throw({error, already_existing_rewards_v2});
 calculate_reward_for_txn(blockchain_txn_rewards_v1, _Txn, _End, _Acc, _Chain,
@@ -238,8 +267,8 @@ calculate_reward_for_txn(Type, Txn, _End, Acc, _Chain, Ledger, _Vars) ->
 
 -spec consider_overage( Type :: atom(),
                         Txn :: blockchain_txn:txn(),
-                        Acc :: rewards_metadata(),
-                        Ledger :: blockchain_ledger_v1:ledger() ) -> rewards_metadata().
+                        Acc :: rewards_share_metadata(),
+                        Ledger :: blockchain_ledger_v1:ledger() ) -> rewards_share_metadata().
 consider_overage(Type, Txn, Acc, Ledger) ->
     %% calculate any fee paid in excess which we will distribute as bonus HNT
     %% to consensus members
@@ -255,10 +284,10 @@ consider_overage(Type, Txn, Acc, Ledger) ->
     end.
 
 -spec calculate_poc_challengee_rewards( Txn :: blockchain_txn:txn(),
-                                        Acc :: rewards_metadata(),
+                                        Acc :: rewards_share_metadata(),
                                         Chain :: blockchain:blockchain(),
                                         Ledger :: blockchain_ledger_v1:ledger(),
-                                        Vars :: reward_vars() ) -> rewards_metadata().
+                                        Vars :: reward_vars() ) -> rewards_share_metadata().
 calculate_poc_challengee_rewards(Txn, #{ poc_challengee := ChallengeeMap } = Acc,
                                  Chain, Ledger, #{ var_map := VarMap } = Vars) ->
     Path = blockchain_txn_poc_receipts_v1:path(Txn),
@@ -266,25 +295,25 @@ calculate_poc_challengee_rewards(Txn, #{ poc_challengee := ChallengeeMap } = Acc
     Acc#{ poc_challengee => NewCM }.
 
 -spec calculate_poc_witness_rewards( Txn :: blockchain_txn:txn(),
-                                     Acc :: rewards_metadata(),
+                                     Acc :: rewards_share_metadata(),
                                      Chain :: blockchain:blockchain(),
                                      Ledger :: blockchain_ledger_v1:ledger(),
-                                     Vars :: reward_vars() ) -> rewards_metadata().
+                                     Vars :: reward_vars() ) -> rewards_share_metadata().
 calculate_poc_witness_rewards(Txn, #{ poc_witness := WitnessMap } = Acc, Chain, Ledger, Vars) ->
     NewWM = poc_witness_reward(Txn, WitnessMap, Chain, Ledger, Vars),
     Acc#{ poc_witness => NewWM }.
 
 -spec calculate_dc_rewards( Txn :: blockchain_txn:txn(),
                             End :: pos_integer(),
-                            Acc :: rewards_metadata(),
+                            Acc :: rewards_share_metadata(),
                             Chain :: blockchain:blockchain(),
                             Ledger :: blockchain_ledger_v1:ledger(),
-                            Vars :: reward_vars() ) -> rewards_metadata().
-calculate_dc_rewards(Txn, End, #{ dc_reward := DCRewardMap } = Acc, _Chain, Ledger, Vars) ->
+                            Vars :: reward_vars() ) -> rewards_share_metadata().
+calculate_dc_rewards(Txn, End, #{ dc_rewards := DCRewardMap } = Acc, _Chain, Ledger, Vars) ->
     NewDCM = dc_reward(Txn, End, DCRewardMap, Ledger, Vars),
-    Acc#{ dc_reward := NewDCM }.
+    Acc#{ dc_rewards := NewDCM }.
 
--spec finalize_reward_calculations( AccIn :: rewards_metadata(),
+-spec finalize_reward_calculations( AccIn :: rewards_share_metadata(),
                                     Ledger :: blockchain_ledger_v1:ledger(),
                                     Vars :: reward_vars() ) -> rewards_metadata().
 finalize_reward_calculations(AccIn, Ledger, Vars) ->
@@ -294,6 +323,9 @@ finalize_reward_calculations(AccIn, Ledger, Vars) ->
     Vars0 = maps:put(dc_remainder, DCRemainder, Vars),
 
     %% apply the DC remainder, if any to the other PoC categories pro rata
+    %%
+    %% these functions take reward "shares" for that reward category and
+    %% convert them into actual HNT values
     NWR = normalize_witness_rewards(maps:get(poc_witness, AccIn), Vars0),
     NCgrR = normalize_challenger_rewards(maps:get(poc_challenger, AccIn), Vars0),
     NCgeR = normalize_challengee_rewards(maps:get(poc_challengee, AccIn), Vars0),
@@ -306,9 +338,9 @@ finalize_reward_calculations(AccIn, Ledger, Vars) ->
             securities_rewards => SecuritiesRewards }.
 
 -spec prepare_rewards_v2_txns( Results :: rewards_metadata(),
-                               Ledger :: blockchain_ledger_v1:ledger() ) -> [reward_v2].
+                               Ledger :: blockchain_ledger_v1:ledger() ) -> [reward_v2()].
 prepare_rewards_v2_txns(Results, Ledger) ->
-    maybe_use_rewards_metadata_callback(Results, Ledger),
+    _ = maybe_use_rewards_metadata_callback(Results, Ledger),
     %% we are going to fold over a list of keys in the rewards map (Results)
     %% and generate a new map which has _all_ the owners and the sum of
     %% _all_ rewards types in a new map...
@@ -347,12 +379,13 @@ prepare_rewards_v2_txns(Results, Ledger) ->
     %% transaction for the blockchain
 
     Rewards = maps:fold(fun(Owner, Amount, Acc) ->
-                      [ #blockchain_txn_reward_v2_pb{account=Owner, amount=Amount} | Acc ]
+                      [ new_reward(Owner, Amount) | Acc ]
               end,
               [],
               maps:iterator(AllRewards)), %% again, bound memory no matter size of map
 
-    %% sort the rewards list before it gets returned
+    %% sort the rewards list before it gets returned so list ordering is deterministic
+    %% (map keys can be enumerated in any arbitrary order)
     lists:sort(Rewards).
 
 %% @doc The environment variable `rewards_v2_metadata_callback' should be specified
@@ -933,10 +966,12 @@ normalize_witness_rewards(WitnessRewards, #{epoch_reward := EpochReward,
         WitnessRewards
     ).
 
--spec collect_dc_rewards_from_previous_epoch_grace(non_neg_integer(), non_neg_integer(),
-                                                   blockchain:blockchain(), map(),
-                                                   blockchain_ledger_v1:ledger()) ->
-    {ok, map()} | {error, any()}.
+-spec collect_dc_rewards_from_previous_epoch_grace(
+        Start :: non_neg_integer(),
+        End :: non_neg_integer(),
+        Chain :: blockchain:blockchain(),
+        Vars :: reward_vars(),
+        Ledger :: blockchain_ledger_v1:ledger()) -> {ok, dc_rewards_share_map()} | {error, any()}.
 collect_dc_rewards_from_previous_epoch_grace(Start, End, Chain,
                                              #{sc_grace_blocks := Grace,
                                                reward_version := RV} = Vars,
@@ -950,7 +985,7 @@ collect_dc_rewards_from_previous_epoch_grace(_Start, _End, _Chain, _Vars, _Ledge
                         Vars :: reward_vars(),
                         Chain :: blockchain:blockchain(),
                         Ledger :: blockchain_ledger_v1:ledger(),
-                        Acc :: rewards_share_map() ) -> rewards_share_map().
+                        Acc :: dc_rewards_share_map() ) -> {ok, dc_rewards_share_map()} | {error, term()}.
 scan_grace_block(Current, Start, _End, _Vars, _Chain, _Ledger, Acc)
                                            when Current == Start + 1 -> {ok, Acc};
 scan_grace_block(Current, Start, End, Vars, Chain, Ledger, Acc) ->
@@ -974,9 +1009,9 @@ scan_grace_block(Current, Start, End, Vars, Chain, Ledger, Acc) ->
 
 -spec dc_reward( Txn :: blockchain_txn_state_channel_close_v1:txn_state_channel_close(),
                  End :: pos_integer(),
-                 AccIn :: rewards_share_map(),
+                 AccIn :: dc_rewards_share_map(),
                  Ledger :: blockchain_ledger_v1:ledger(),
-                 Vars :: reward_vars() ) -> rewards_share_map().
+                 Vars :: reward_vars() ) -> dc_rewards_share_map().
 dc_reward(Txn, End, AccIn, Ledger, #{ sc_grace_blocks := GraceBlocks,
                                       sc_version := 2} = Vars) ->
     case blockchain_txn_state_channel_close_v1:state_channel_expire_at(Txn) + GraceBlocks < End of
@@ -1042,8 +1077,8 @@ dc_reward(Txn, End, AccIn, Ledger, #{ sc_grace_blocks := GraceBlocks,
             AccIn
     end.
 
--spec normalize_dc_rewards( DCRewards0 :: rewards_share_map(),
-                            Vars :: reward_vars() ) -> rewards_map().
+-spec normalize_dc_rewards( DCRewards0 :: dc_rewards_share_map(),
+                            Vars :: reward_vars() ) -> {non_neg_integer(), gateway_reward()}.
 normalize_dc_rewards(DCRewards0, #{epoch_reward := EpochReward,
                                    dc_percent := DCPercent}=Vars) ->
     DCRewards = maps:remove(seen, DCRewards0),
@@ -1068,7 +1103,7 @@ normalize_dc_rewards(DCRewards0, #{epoch_reward := EpochReward,
             end
     end,
 
-    {round(MaxDCReward - DCReward),
+    {max(0, round(MaxDCReward - DCReward)),
      maps:fold(
        fun(Key, NumDCs, Acc) ->
                PercentofReward = (NumDCs*100/TotalDCs)/100,

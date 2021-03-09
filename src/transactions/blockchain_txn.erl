@@ -585,7 +585,9 @@ type(#blockchain_txn_gen_price_oracle_v1_pb{}) ->
 type(#blockchain_txn_transfer_hotspot_v1_pb{}) ->
     blockchain_txn_transfer_hotspot_v1;
 type(#blockchain_txn_rewards_v2_pb{}) ->
-    blockchain_txn_rewards_v2.
+    blockchain_txn_rewards_v2;
+type(#blockchain_txn_reward_v2_pb{}) ->
+    blockchain_txn_reward_v2.
 
 
 -spec validate_fields([{{atom(), iodata() | undefined},
@@ -814,6 +816,8 @@ actor(Txn) ->
         blockchain_txn_state_channel_close_v1 ->
             %% group by owner
             blockchain_txn_state_channel_close_v1:state_channel_owner(Txn);
+        blockchain_txn_reward_v2 ->
+            blockchain_txn_rewards_v2:reward_account(Txn);
         _ ->
             <<>>
     end.
