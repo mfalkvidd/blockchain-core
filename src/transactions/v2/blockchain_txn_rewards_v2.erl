@@ -48,15 +48,13 @@
                                    libp2p_crypto:pubkey_bin() => non_neg_integer() }.
 -type rewards_share_map() :: base_rewards_share_map() | dc_rewards_share_map() | #{}.
 -type reward_vars() :: map().
--type reward_types() :: poc_challenger | poc_challengee | poc_witness | data_credits | securities | consensus.
--type owner_reward() :: {owner, reward_types(), libp2p_crypto:pubkey_bin()}.
+-type reward_types() :: poc_challenger | poc_challengee | poc_witness | data_credits | consensus.
+-type owner_reward() :: {owner, securities, libp2p_crypto:pubkey_bin()}.
 -type gateway_reward() :: {gateway, reward_types(), libp2p_crypto:pubkey_bin()}.
--type rewards_map() :: #{ owner_reward() | gateway_reward() => non_neg_integer() }.
--type metadata_key() :: poc_challenger | poc_challengee | poc_witness | dc_rewards | securities_rewards | consensus_rewards.
--type rewards_share_metadata() :: #{ metadata_key() => rewards_share_map(),
+-type share_key() :: poc_challenger | poc_challengee | poc_witness | dc_rewards.
+-type rewards_share_metadata() :: #{ share_key() => rewards_share_map(),
                                      overages => non_neg_integer() }.
--type rewards_metadata() :: #{ metadata_key() => rewards_map(),
-                               overages => non_neg_integer() }.
+-type rewards_metadata() :: map().
 -export_type([txn_rewards_v2/0]).
 
 -spec new(non_neg_integer(), non_neg_integer(), [reward_v2()]) -> txn_rewards_v2().
@@ -316,26 +314,28 @@ calculate_dc_rewards(Txn, End, #{ dc_rewards := DCRewardMap } = Acc, _Chain, Led
 -spec finalize_reward_calculations( AccIn :: rewards_share_metadata(),
                                     Ledger :: blockchain_ledger_v1:ledger(),
                                     Vars :: reward_vars() ) -> rewards_metadata().
-finalize_reward_calculations(AccIn, Ledger, Vars) ->
+finalize_reward_calculations(#{ dc_rewards := DCShares,
+                                poc_witness := WitnessShares,
+                                poc_challenger := ChallengerShares,
+                                poc_challengee := ChallengeeShares } = AccIn, Ledger, Vars) ->
     SecuritiesRewards = securities_rewards(Ledger, Vars),
-    ConsensusRewards = consensus_members_rewards(Ledger, Vars, maps:get(overages, AccIn, 0)),
-    {DCRemainder, NewDCRewards} = normalize_dc_rewards(maps:get(dc_rewards, AccIn), Vars),
+    Overages = maps:get(overages, AccIn, 0),
+    ConsensusRewards = consensus_members_rewards(Ledger, Vars, Overages),
+    {DCRemainder, DCRewards} = normalize_dc_rewards(DCShares, Vars),
     Vars0 = maps:put(dc_remainder, DCRemainder, Vars),
 
     %% apply the DC remainder, if any to the other PoC categories pro rata
     %%
-    %% these functions take reward "shares" for that reward category and
-    %% convert them into actual HNT values
-    NWR = normalize_witness_rewards(maps:get(poc_witness, AccIn), Vars0),
-    NCgrR = normalize_challenger_rewards(maps:get(poc_challenger, AccIn), Vars0),
-    NCgeR = normalize_challengee_rewards(maps:get(poc_challengee, AccIn), Vars0),
+    %% these normalize functions take reward "shares" and convert them
+    %% into HNT payouts
 
-    AccIn#{ poc_witness => NWR,
-            poc_challenger => NCgrR,
-            poc_challengee => NCgeR,
-            dc_rewards => NewDCRewards,
-            consensus_rewards => ConsensusRewards,
-            securities_rewards => SecuritiesRewards }.
+    #{ poc_witness => normalize_witness_rewards(WitnessShares, Vars0),
+       poc_challenger => normalize_challenger_rewards(ChallengerShares, Vars0),
+       poc_challengee => normalize_challengee_rewards(ChallengeeShares, Vars0),
+       dc_rewards => DCRewards,
+       consensus_rewards => ConsensusRewards,
+       securities_rewards => SecuritiesRewards,
+       overages => Overages }.
 
 -spec prepare_rewards_v2_txns( Results :: rewards_metadata(),
                                Ledger :: blockchain_ledger_v1:ledger() ) -> [reward_v2()].
@@ -543,21 +543,19 @@ calculate_epoch_reward(_Version, _Start, _End, BlockTime0, ElectionInterval, Mon
 
 -spec consensus_members_rewards(blockchain_ledger_v1:ledger(),
                                 reward_vars(),
-                                non_neg_integer()) -> rewards_map().
+                                non_neg_integer()) -> map().
 consensus_members_rewards(Ledger, #{epoch_reward := EpochReward,
                                     consensus_percent := ConsensusPercent}, OverageTotal) ->
     case blockchain_ledger_v1:consensus_members(Ledger) of
-        {error, _Reason} ->
-            lager:error("failed to get consensus_members ~p", [_Reason]),
-            #{};
-            % TODO: Should we error out here?
+        {error, _Reason} = Err ->
+            throw(Err);
         {ok, ConsensusMembers} ->
-            OveragePerMember = OverageTotal div length(ConsensusMembers),
+            Count = erlang:length(ConsensusMembers),
+            OveragePerMember = OverageTotal div Count,
             ConsensusReward = EpochReward * ConsensusPercent,
-            Total = erlang:length(ConsensusMembers),
             lists:foldl(
                 fun(Member, Acc) ->
-                    PercentofReward = 100/Total/100,
+                    PercentofReward = 100/Count/100,
                     Amount = erlang:round(PercentofReward*ConsensusReward),
                     maps:put({gateway, consensus, Member}, Amount+OveragePerMember, Acc)
                 end,
@@ -567,7 +565,7 @@ consensus_members_rewards(Ledger, #{epoch_reward := EpochReward,
     end.
 
 -spec securities_rewards(blockchain_ledger_v1:ledger(),
-                         reward_vars()) -> rewards_map().
+                         reward_vars()) -> owner_reward().
 securities_rewards(Ledger, #{epoch_reward := EpochReward,
                              securities_percent := SecuritiesPercent}) ->
     Securities = blockchain_ledger_v1:securities(Ledger),
@@ -605,7 +603,7 @@ poc_challenger_reward(Txn, ChallengerRewards, #{poc_version := Version}) ->
     end.
 
 -spec normalize_challenger_rewards( ChallengerRewards :: rewards_share_map(),
-                                    Vars :: reward_vars() ) -> rewards_map().
+                                    Vars :: reward_vars() ) -> gateway_reward().
 normalize_challenger_rewards(ChallengerRewards, #{epoch_reward := EpochReward,
                                         poc_challengers_percent := PocChallengersPercent}=Vars) ->
     TotalChallenged = lists:sum(maps:values(ChallengerRewards)),
@@ -622,7 +620,7 @@ normalize_challenger_rewards(ChallengerRewards, #{epoch_reward := EpochReward,
     ).
 
 -spec normalize_challengee_rewards( ChallengeeRewards :: rewards_share_map(),
-                                    Vars :: reward_vars() ) -> rewards_map().
+                                    Vars :: reward_vars() ) -> gateway_reward().
 normalize_challengee_rewards(ChallengeeRewards, #{epoch_reward := EpochReward,
                                                   poc_challengees_percent := PocChallengeesPercent}=Vars) ->
     TotalChallenged = lists:sum(maps:values(ChallengeeRewards)),
@@ -950,7 +948,7 @@ poc_witness_reward(Txn, AccIn, _Chain, _Ledger, _Vars) ->
       blockchain_txn_poc_receipts_v1:path(Txn)).
 
 -spec normalize_witness_rewards( WitnessRewards :: rewards_share_map(),
-                                 Vars :: reward_vars() ) -> rewards_map().
+                                 Vars :: reward_vars() ) -> gateway_reward().
 normalize_witness_rewards(WitnessRewards, #{epoch_reward := EpochReward,
                                             poc_witnesses_percent := PocWitnessesPercent}=Vars) ->
     TotalWitnesses = lists:sum(maps:values(WitnessRewards)),
